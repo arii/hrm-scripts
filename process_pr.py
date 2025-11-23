@@ -15,6 +15,14 @@ try:
 except ImportError:
     JULES_AVAILABLE = False
 
+# Attempt to import Secrets Manager
+try:
+    import secrets_ops
+
+    SECRETS_AVAILABLE = True
+except ImportError:
+    SECRETS_AVAILABLE = False
+
 # Configuration
 REPO_DIR = "/home/ari/workspace/leader"
 WORKTREES_BASE = "/home/ari/workspace/worktrees"
@@ -170,6 +178,14 @@ def rebase_and_push(worktree_path, branch_name):
             capture_output=True,
         )
         print("[OK] Rebase successful.")
+        # If rebase succeeds, we still force push to ensure remote is updated
+        print("[INFO] Force pushing successful rebase...")
+        run(
+            ["git", "push", "origin", branch_name, "--force"],
+            cwd=worktree_path,
+            check=False,
+        )
+        return True
     except subprocess.CalledProcessError:
         print("[WARN] Rebase failed due to conflicts.")
         print("[INFO] Aborting rebase to fallback to Merge strategy...")
@@ -184,6 +200,8 @@ def rebase_and_push(worktree_path, branch_name):
                 cwd=worktree_path,
                 capture_output=True,
             )
+            # If merge succeeds without conflicts, great!
+            print("[OK] Merge successful.")
         except subprocess.CalledProcessError:
             print("[WARN] Merge conflicts detected. Committing markers...")
             # 1. Stage all files (including those with <<<< markers)
@@ -202,7 +220,19 @@ def rebase_and_push(worktree_path, branch_name):
                 check=False,
             )
 
-    print("[INFO] Force pushing changes (including potential conflicts)...")
+            # Return False to indicate we have conflicts that need resolution
+            # This will trigger the Jules session creation immediately
+            print(
+                "[INFO] Force pushing changes (including potential conflicts)..."
+            )
+            run(
+                ["git", "push", "origin", branch_name, "--force"],
+                cwd=worktree_path,
+                check=False,
+            )
+            return False
+
+    print("[INFO] Force pushing changes...")
     run(
         ["git", "push", "origin", branch_name, "--force"],
         cwd=worktree_path,
@@ -213,8 +243,7 @@ def rebase_and_push(worktree_path, branch_name):
 
 def run_checks(worktree_path):
     """Runs the suite of checks and returns a list of results."""
-    # We apply robust flags here to prevent hangs and ensure
-    # correct exit codes.
+    # We apply robust flags here to prevent hangs and ensure correct exit codes.
     # --ci: Tells Jest to run in non-interactive mode.
     # --reporter=list: Tells Playwright to output text only.
     checks = [
@@ -283,11 +312,14 @@ def post_pr_comment(pr_number, results, failure_details, session_url=None):
 
     body = "### Automated Verification Results\n\n"
 
-    # Table of results
-    body += "| Check | Status | Duration |\n"
-    body += "|---|---|---|\n"
-    for r in results:
-        body += f"| {r['name']} | {r['status']} | {r['duration']} |\n"
+    if results:
+        # Table of results
+        body += "| Check | Status | Duration |\n"
+        body += "|---|---|---|\n"
+        for r in results:
+            body += f"| {r['name']} | {r['status']} | {r['duration']} |\n"
+    else:
+        body += "**Verification skipped due to merge/rebase failures.**\n"
 
     if failure_details:
         body += f"\n\n**Verification Failed at: {failure_details['step']}**\n"
@@ -322,6 +354,16 @@ def update_pr_status(pr_number):
     print("[INFO] Marking PR as ready for review...")
     run(
         ["gh", "pr", "ready", str(pr_number), "--repo", "arii/hrm"],
+        check=False,
+    )
+
+
+def mark_pr_as_draft(pr_number):
+    """Converts PR back to draft status if tests fail."""
+    print("[INFO] Tests failed. Converting PR back to Draft...")
+    # 'gh pr ready --undo' converts a ready PR back to draft
+    run(
+        ["gh", "pr", "ready", str(pr_number), "--undo", "--repo", "arii/hrm"],
         check=False,
     )
 
@@ -367,6 +409,11 @@ def main():
         description="Automated PR Verification & Fix Loop"
     )
     parser.add_argument("pr_number", help="GitHub PR number (e.g. 160)")
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Start production server if all checks pass",
+    )
     args = parser.parse_args()
 
     # 1. Get PR Details
@@ -379,22 +426,47 @@ def main():
     # 2. Setup Worktree
     worktree_path = setup_worktree(branch_name)
 
-    # 3. Setup Dependencies
-    setup_script = os.path.join(worktree_path, "scripts", "setup.sh")
-    if os.path.exists(setup_script):
-        print("[INFO] Running setup.sh...")
-        run([setup_script], cwd=worktree_path)
+    # 3. Rebase & Force Push (Early Fail Check)
+    print("\n[STEP] Attempting to sync with leader (Rebase/Merge)...")
+    is_git_clean = rebase_and_push(worktree_path, branch_name)
+
+    results = []
+    failure = None
+
+    if not is_git_clean:
+        print("[FAIL] Git rebase/merge failed with conflicts.")
+        failure = {
+            "step": "Git Rebase/Merge",
+            "cmd": "git rebase origin/leader",
+            "log": "Merge conflicts detected. "
+            "Conflict markers have been committed and pushed.",
+        }
     else:
-        print("[WARN] scripts/setup.sh not found, running npm install.")
-        run(["npm", "install"], cwd=worktree_path)
+        # 4. Setup Dependencies (Only if git is clean)
+        print("\n[STEP] Setting up dependencies...")
+        setup_script = os.path.join(worktree_path, "scripts", "setup.sh")
+        if os.path.exists(setup_script):
+            print("[INFO] Running setup.sh...")
+            run([setup_script], cwd=worktree_path)
+        else:
+            print("[WARN] scripts/setup.sh not found, running npm install.")
+            run(["npm", "install"], cwd=worktree_path)
 
-    # 4. Rebase & Force Push
-    rebase_and_push(worktree_path, branch_name)
+        # 5. Provision Secrets (for build/test)
+        if SECRETS_AVAILABLE:
+            print("\n[STEP] Provisioning secrets...")
+            secrets_ops.provision_secrets(worktree_path)
+        else:
+            print(
+                "[WARN] secrets_ops.py not found. "
+                "Skipping secrets provisioning."
+            )
 
-    # 5. Run Checks
-    results, failure = run_checks(worktree_path)
+        # 6. Run Checks
+        print("\n[STEP] Running verification suite...")
+        results, failure = run_checks(worktree_path)
 
-    # 6. Handle Outcome
+    # 7. Handle Outcome
     session_link = None
     if failure:
         # Create Jules Session
@@ -403,13 +475,40 @@ def main():
         )
         if session_id:
             session_link = f"Session ID: {session_id}"
+
+        # If it was ready for review, revert to draft
+        if not pr_info["isDraft"]:
+            mark_pr_as_draft(args.pr_number)
     else:
-        # Success Action
+        # Success Action: Mark ready BEFORE user testing
         if pr_info["isDraft"]:
             update_pr_status(args.pr_number)
 
-    # 7. Post Results
+    # 8. Post Results
     post_pr_comment(args.pr_number, results, failure, session_link)
+
+    # 9. User Testing (If successful and requested)
+    if not failure and is_git_clean and args.start:
+        print("\n[SUCCESS] All checks passed!")
+        print("[STEP] Preparing for manual verification...")
+
+        # Ensure secrets are provisioned (in case they weren't earlier)
+        if SECRETS_AVAILABLE:
+            secrets_ops.provision_secrets(worktree_path)
+
+        prod_script = os.path.join(worktree_path, "start-production.sh")
+        if os.path.exists(prod_script) and os.access(prod_script, os.X_OK):
+            print(f"\n[INFO] Launching production server: {prod_script}")
+            print("       Press Ctrl+C to stop and finish.")
+            try:
+                # Run interactively
+                subprocess.run([prod_script], cwd=worktree_path)
+            except KeyboardInterrupt:
+                print("\n[STOP] Server stopped by user.")
+        else:
+            print("[WARN] start-production.sh not found or not executable.")
+    elif not failure and is_git_clean:
+        print("\n[SUCCESS] All checks passed. Use --start to run server.")
 
     print("\n[DONE] Process Complete.")
 
