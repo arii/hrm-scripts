@@ -354,7 +354,7 @@ def normalize_sessions(sessions):
                 "full_name": s.get("name"),
                 "state": s.get("state"),
                 "created_at": s.get("createTime"),
-                "title": s.get("title"),
+                "title": s.get("title", "").split('\n')[0],
                 "pr_url": pr_url,
             }
         )

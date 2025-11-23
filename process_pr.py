@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import os
-import shutil
 import subprocess
 import sys
+import shutil
+import json
 import time
+import re
 
 # Attempt to import JulesClient from existing ops script
 try:
     from jules_ops import JulesClient
-
     JULES_AVAILABLE = True
 except ImportError:
     JULES_AVAILABLE = False
@@ -18,7 +18,6 @@ except ImportError:
 # Attempt to import Secrets Manager
 try:
     import secrets_ops
-
     SECRETS_AVAILABLE = True
 except ImportError:
     SECRETS_AVAILABLE = False
@@ -49,15 +48,15 @@ def run(cmd, cwd=None, check=True, capture_output=False, env=None):
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
             bufsize=1,  # Line buffered
-            env=run_env,
+            env=run_env
         )
 
         captured_lines = []
 
         # Read stream line by line
         with process.stdout:
-            for line in iter(process.stdout.readline, ""):
-                print(line, end="")  # Stream to console immediately
+            for line in iter(process.stdout.readline, ''):
+                print(line, end='')  # Stream to console immediately
                 captured_lines.append(line)
 
         process.wait()
@@ -71,21 +70,21 @@ def run(cmd, cwd=None, check=True, capture_output=False, env=None):
             )
 
         # Return object compatible with subprocess.CompletedProcess
-        return type(
-            "CompletedProcess",
-            (object,),
-            {
-                "stdout": stdout_content,
-                "stderr": "",  # Merged into stdout
-                "returncode": returncode,
-            },
-        )
+        return type('CompletedProcess', (object,), {
+            'stdout': stdout_content,
+            'stderr': '',  # Merged into stdout
+            'returncode': returncode
+        })
 
     else:
         # Standard run: Output goes directly to console, no capturing
         try:
             result = subprocess.run(
-                cmd, cwd=cwd, check=check, text=True, env=run_env
+                cmd,
+                cwd=cwd,
+                check=check,
+                text=True,
+                env=run_env
             )
             return result
         except subprocess.CalledProcessError as e:
@@ -97,21 +96,15 @@ def get_pr_details(pr_number):
     """Fetch PR branch name and status using gh CLI."""
     try:
         cmd = [
-            "gh",
-            "pr",
-            "view",
-            str(pr_number),
-            "--json",
-            "headRefName,url,isDraft,state,title",
-            "--repo",
-            "arii/hrm",
+            "gh", "pr", "view", str(pr_number),
+            "--json", "headRefName,url,isDraft,state,title",
+            "--repo", "arii/hrm"
         ]
         res = run(cmd, check=True, capture_output=True)
         return json.loads(res.stdout)
     except Exception:
-        print(
-            f"[ERROR] Failed to fetch PR #{pr_number}. " "Is gh CLI installed?"
-        )
+        print(f"[ERROR] Failed to fetch PR #{pr_number}. "
+              "Is gh CLI installed?")
         sys.exit(1)
 
 
@@ -123,7 +116,8 @@ def setup_worktree(branch_name):
     run(["git", "worktree", "prune"], cwd=REPO_DIR, check=False)
 
     if os.path.exists(worktree_path):
-        print(f"[WARN] Worktree path {worktree_path} exists. " "Removing it.")
+        print(f"[WARN] Worktree path {worktree_path} exists. "
+              "Removing it.")
         shutil.rmtree(worktree_path)
         run(["git", "worktree", "prune"], cwd=REPO_DIR, check=False)
 
@@ -135,23 +129,17 @@ def setup_worktree(branch_name):
         # Try checking out existing branch
         run(
             ["git", "worktree", "add", worktree_path, branch_name],
-            cwd=REPO_DIR,
+            cwd=REPO_DIR
         )
     except subprocess.CalledProcessError:
         # If local branch doesn't match remote or doesn't exist, try tracking
         try:
             run(
                 [
-                    "git",
-                    "worktree",
-                    "add",
-                    "--track",
-                    "-b",
-                    branch_name,
-                    worktree_path,
-                    f"origin/{branch_name}",
+                    "git", "worktree", "add", "--track", "-b",
+                    branch_name, worktree_path, f"origin/{branch_name}"
                 ],
-                cwd=REPO_DIR,
+                cwd=REPO_DIR
             )
         except subprocess.CalledProcessError:
             print("[ERROR] Failed to create worktree. Does branch exist?")
@@ -175,7 +163,7 @@ def rebase_and_push(worktree_path, branch_name):
         run(
             ["git", "rebase", "origin/leader"],
             cwd=worktree_path,
-            capture_output=True,
+            capture_output=True
         )
         print("[OK] Rebase successful.")
         # If rebase succeeds, we still force push to ensure remote is updated
@@ -183,7 +171,7 @@ def rebase_and_push(worktree_path, branch_name):
         run(
             ["git", "push", "origin", branch_name, "--force"],
             cwd=worktree_path,
-            check=False,
+            check=False
         )
         return True
     except subprocess.CalledProcessError:
@@ -198,7 +186,7 @@ def rebase_and_push(worktree_path, branch_name):
             run(
                 ["git", "merge", "origin/leader"],
                 cwd=worktree_path,
-                capture_output=True,
+                capture_output=True
             )
             # If merge succeeds without conflicts, great!
             print("[OK] Merge successful.")
@@ -211,24 +199,20 @@ def rebase_and_push(worktree_path, branch_name):
             # We use --no-edit to accept default merge message or -m
             run(
                 [
-                    "git",
-                    "commit",
-                    "-m",
-                    "Merge origin/leader (with unresolved conflicts)",
+                    "git", "commit", "-m",
+                    "Merge origin/leader (with unresolved conflicts)"
                 ],
                 cwd=worktree_path,
-                check=False,
+                check=False
             )
 
             # Return False to indicate we have conflicts that need resolution
             # This will trigger the Jules session creation immediately
-            print(
-                "[INFO] Force pushing changes (including potential conflicts)..."
-            )
+            print("[INFO] Force pushing changes (with potential conflicts)...")
             run(
                 ["git", "push", "origin", branch_name, "--force"],
                 cwd=worktree_path,
-                check=False,
+                check=False
             )
             return False
 
@@ -236,7 +220,7 @@ def rebase_and_push(worktree_path, branch_name):
     run(
         ["git", "push", "origin", branch_name, "--force"],
         cwd=worktree_path,
-        check=False,
+        check=False
     )
     return True
 
@@ -247,12 +231,21 @@ def run_checks(worktree_path):
     # --ci: Tells Jest to run in non-interactive mode.
     # --reporter=list: Tells Playwright to output text only.
     checks = [
-        {"name": "Lint", "cmd": ["npm", "run", "lint"]},
-        {"name": "Build", "cmd": ["npm", "run", "build"]},
-        {"name": "Unit Tests", "cmd": ["npm", "run", "test", "--", "--ci"]},
+        {
+            "name": "Lint",
+            "cmd": ["npm", "run", "lint"]
+        },
+        {
+            "name": "Build",
+            "cmd": ["npm", "run", "build"]
+        },
+        {
+            "name": "Unit Tests",
+            "cmd": ["npm", "run", "test", "--", "--ci"]
+        },
         {
             "name": "Visual Tests",
-            "cmd": ["npm", "run", "test:visual", "--", "--reporter=list"],
+            "cmd": ["npm", "run", "test:visual", "--", "--reporter=list"]
         },
     ]
 
@@ -268,38 +261,43 @@ def run_checks(worktree_path):
         start_time = time.time()
         try:
             # Command output is streamed to console via run()
-            run(
-                check["cmd"],
+            proc = run(
+                check['cmd'],
                 cwd=worktree_path,
                 check=True,
                 capture_output=True,
-                env=ci_env,
+                env=ci_env
             )
 
+            # Robustness: Check for test failure strings even if exit code is 0
+            # Matches strings like "1 failed", "4 failed" but NOT "0 failed"
+            # This handles cases where test runner timeout logic is quirky
+            if re.search(r'\b[1-9]\d* failed', proc.stdout):
+                print(f"[WARN] Detected failure text in {check['name']} output!")
+                raise subprocess.CalledProcessError(
+                    0, check['cmd'], output=proc.stdout
+                )
+
             duration = round(time.time() - start_time, 2)
-            results.append(
-                {
-                    "name": check["name"],
-                    "status": "[PASS]",
-                    "duration": f"{duration}s",
-                }
-            )
+            results.append({
+                "name": check['name'],
+                "status": "[PASS]",
+                "duration": f"{duration}s"
+            })
         except subprocess.CalledProcessError as e:
             duration = round(time.time() - start_time, 2)
-            results.append(
-                {
-                    "name": check["name"],
-                    "status": "[FAIL]",
-                    "duration": f"{duration}s",
-                }
-            )
+            results.append({
+                "name": check['name'],
+                "status": "[FAIL]",
+                "duration": f"{duration}s"
+            })
 
             # Capture failure info
-            stdout = e.output if hasattr(e, "output") else str(e)
+            stdout = e.output if hasattr(e, 'output') else str(e)
             failure_details = {
-                "step": check["name"],
-                "cmd": " ".join(check["cmd"]),
-                "log": stdout,
+                "step": check['name'],
+                "cmd": " ".join(check['cmd']),
+                "log": stdout
             }
             print(f"[ERROR] {check['name']} Failed!")
             break  # Stop at first failure
@@ -328,7 +326,7 @@ def post_pr_comment(pr_number, results, failure_details, session_url=None):
 
         body += "\n<details><summary>Failure Logs</summary>\n\n```\n"
         # Truncate log if too long for comment
-        body += failure_details["log"][-2000:]
+        body += failure_details['log'][-2000:]
         body += "\n```\n</details>"
     else:
         body += "\n\nAll checks passed! Ready for review."
@@ -336,16 +334,10 @@ def post_pr_comment(pr_number, results, failure_details, session_url=None):
     print("[INFO] Posting comment to PR...")
     run(
         [
-            "gh",
-            "pr",
-            "comment",
-            str(pr_number),
-            "--body",
-            body,
-            "--repo",
-            "arii/hrm",
+            "gh", "pr", "comment", str(pr_number),
+            "--body", body, "--repo", "arii/hrm"
         ],
-        check=False,
+        check=False
     )
 
 
@@ -354,7 +346,7 @@ def update_pr_status(pr_number):
     print("[INFO] Marking PR as ready for review...")
     run(
         ["gh", "pr", "ready", str(pr_number), "--repo", "arii/hrm"],
-        check=False,
+        check=False
     )
 
 
@@ -364,7 +356,7 @@ def mark_pr_as_draft(pr_number):
     # 'gh pr ready --undo' converts a ready PR back to draft
     run(
         ["gh", "pr", "ready", str(pr_number), "--undo", "--repo", "arii/hrm"],
-        check=False,
+        check=False
     )
 
 
@@ -379,7 +371,7 @@ def trigger_jules_fix(branch_name, pr_number, pr_title, failure_details):
 
     # Construct prompt
     prompt = (
-        f'The verification failed for PR #{pr_number} ("{pr_title}").\n\n'
+        f"The verification failed for PR #{pr_number} (\"{pr_title}\").\n\n"
         f"**Failed Step:** {failure_details['step']}\n"
         f"**Command:** `{failure_details['cmd']}`\n\n"
         f"**Error Log:**\n```\n{failure_details['log']}\n```\n\n"
@@ -395,7 +387,7 @@ def trigger_jules_fix(branch_name, pr_number, pr_title, failure_details):
             prompt=prompt,
             source="sources/github/arii/hrm",  # Default source
             branch=branch_name,
-            title=session_title,
+            title=session_title
         )
         print(f"[OK] Created Session: {session_name}")
         return session_name
@@ -412,14 +404,14 @@ def main():
     parser.add_argument(
         "--start",
         action="store_true",
-        help="Start production server if all checks pass",
+        help="Start production server if all checks pass"
     )
     args = parser.parse_args()
 
     # 1. Get PR Details
     print(f"[INFO] Fetching details for PR #{args.pr_number}...")
     pr_info = get_pr_details(args.pr_number)
-    branch_name = pr_info["headRefName"]
+    branch_name = pr_info['headRefName']
     print(f"   Branch: {branch_name}")
     print(f"   Draft:  {pr_info['isDraft']}")
 
@@ -439,7 +431,7 @@ def main():
             "step": "Git Rebase/Merge",
             "cmd": "git rebase origin/leader",
             "log": "Merge conflicts detected. "
-            "Conflict markers have been committed and pushed.",
+                   "Conflict markers have been committed and pushed."
         }
     else:
         # 4. Setup Dependencies (Only if git is clean)
@@ -457,10 +449,8 @@ def main():
             print("\n[STEP] Provisioning secrets...")
             secrets_ops.provision_secrets(worktree_path)
         else:
-            print(
-                "[WARN] secrets_ops.py not found. "
-                "Skipping secrets provisioning."
-            )
+            print("[WARN] secrets_ops.py not found. "
+                  "Skipping secrets provisioning.")
 
         # 6. Run Checks
         print("\n[STEP] Running verification suite...")
@@ -471,17 +461,17 @@ def main():
     if failure:
         # Create Jules Session
         session_id = trigger_jules_fix(
-            branch_name, args.pr_number, pr_info["title"], failure
+            branch_name, args.pr_number, pr_info['title'], failure
         )
         if session_id:
             session_link = f"Session ID: {session_id}"
 
         # If it was ready for review, revert to draft
-        if not pr_info["isDraft"]:
+        if not pr_info['isDraft']:
             mark_pr_as_draft(args.pr_number)
     else:
         # Success Action: Mark ready BEFORE user testing
-        if pr_info["isDraft"]:
+        if pr_info['isDraft']:
             update_pr_status(args.pr_number)
 
     # 8. Post Results

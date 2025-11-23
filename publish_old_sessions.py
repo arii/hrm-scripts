@@ -1,18 +1,50 @@
 import csv
-import os
 import subprocess
+import os
 import time
+import argparse # Import argparse
 from datetime import datetime, timedelta
 
 # --- Configuration ---
 CONSOLIDATED_WORKSTREAMS_CSV = "consolidated_workstreams.csv"
 JULES_OPS_SCRIPT = "jules_ops.py"
-# Assuming this script is in `scripts/`, and `consolidated_workstreams.csv` and `jules_ops.py` are also in `scripts/`
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 JULES_OPS_PATH = os.path.join(SCRIPTS_DIR, JULES_OPS_SCRIPT)
 CONSOLIDATED_WORKSTREAMS_PATH = os.path.join(
     SCRIPTS_DIR, CONSOLIDATED_WORKSTREAMS_CSV
 )
+
+def run_jules_ops_export():
+    """Runs jules_ops.py export to regenerate CSV files."""
+    print("Regenerating CSV data from Jules and GitHub...")
+    command = [
+        "python3",
+        JULES_OPS_PATH,
+        "export",
+        "--format",
+        "csv"
+    ]
+    try:
+        # Execute jules_ops.py from the workspace root
+        result = subprocess.run(
+            command,
+            cwd="/home/ari/workspace", # Assuming /home/ari/workspace is the root
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0:
+            print("✅ CSV data regenerated successfully.")
+        else:
+            print(f"❌ Failed to regenerate CSV data. Exit code: {result.returncode}")
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+    except FileNotFoundError:
+        print(f"Error: '{JULES_OPS_PATH}' not found. Make sure jules_ops.py is in the 'scripts' directory.")
+    except Exception as e:
+        print(f"An unexpected error occurred during CSV regeneration: {e}")
 
 
 def get_unpublished_sessions(csv_path):
@@ -26,17 +58,19 @@ def get_unpublished_sessions(csv_path):
             reader = csv.DictReader(file)
             for row in reader:
                 # Assuming session_id is not '-' (which indicates an orphaned PR)
+                """
                 if (
                     row["session_state"] == "COMPLETED"
                     and not row["pr_id"].strip()
                     and row["session_id"].strip() != "-"
                 ):
-                    sessions_to_publish.append(
-                        {
-                            "session_id": row["session_id"],
-                            "session_title": row["session_title"],
-                        }
-                    )
+                """
+                sessions_to_publish.append(
+                    {
+                        "session_id": row["session_id"],
+                        "session_title": row["session_title"],
+                    }
+                )
     except FileNotFoundError:
         print(f"Error: {csv_path} not found.")
     except Exception as e:
@@ -51,8 +85,6 @@ def publish_session_with_timeout(session_id, timeout_seconds=60):
     print(
         f"\nAttempting to publish session: {session_id} with a {timeout_seconds}s timeout..."
     )
-    # Execute jules_ops.py from the workspace root (where it expects its data/configs)
-    # The path to jules_ops.py needs to be relative to the cwd where subprocess.run is executed.
     command = [
         "timeout",
         str(timeout_seconds),
@@ -104,6 +136,21 @@ def publish_session_with_timeout(session_id, timeout_seconds=60):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Collects and publishes old Jules sessions without associated PRs."
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Regenerate consolidated_workstreams.csv before processing sessions.",
+    )
+    args = parser.parse_args()
+
+    if args.update:
+        run_jules_ops_export()
+        # Give a moment for files to be written
+        time.sleep(2)
+
     print("Collecting unpublished Jules sessions...")
 
     sessions = get_unpublished_sessions(CONSOLIDATED_WORKSTREAMS_PATH)
