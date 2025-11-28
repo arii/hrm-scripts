@@ -43,13 +43,28 @@ git -C $HRM_DIR worktree add --force $WORKTREE_PATH $BRANCH_NAME
 cd $WORKTREE_PATH
 
 echo "Rebasing onto origin/leader..."
-git rebase origin/leader
+if git rebase origin/leader; then
+    echo "Rebase successful. Force pushing..."
+    git push -f
+else
+    echo "Rebase failed. Marking PR as draft and posting comment..."
+    gh pr ready $PR_NUMBER --undo --repo arii/hrm
+    gh pr comment $PR_NUMBER -b "Rebase against origin/leader failed. Please resolve conflicts and re-run tests." --repo arii/hrm
+    exit 1
+fi
 
 echo "Installing dependencies..."
-npm install
+./scripts/setup.sh
 
 echo "Building the project..."
 npm run build
+
+echo "Running verification if script exists..."
+if npm run | grep -q "verify"; then
+    npm run verify
+else
+    echo "Skipping verification, 'verify' script not found."
+fi
 
 echo "Running visual tests..."
 TEST_OUTPUT_FILE=$(mktemp)

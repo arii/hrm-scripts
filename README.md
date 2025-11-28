@@ -126,3 +126,17 @@ If you use VS Code Dev Containers, this workspace will automatically initialize 
 - Use the dashboard (`jules_ops.py status`) to track all active workstreams.
 
 ---
+
+## Troubleshooting
+
+- Layout validation fails:
+	- Ensure submodule is initialized: `git submodule update --init --recursive`
+	- Verify expected paths exist in `hrm/`:
+		- `hrm/package.json`, `hrm/server.ts`, `hrm/next.config.js`
+		- `hrm/app/api/auth/[...nextauth]/route.ts`
+		- `hrm/app/client/control/page.tsx`
+		- `hrm/playwright.config.ts`, `hrm/tests/`, `hrm/Dockerfile`
+- Local verification issues (`npm run verify`):
+	- Run `npm install` in `hrm/` and re-run.
+	- Check environment variables and secrets expected by the app.
+	- Review PR comment for attached logs and structure analyzer output.
