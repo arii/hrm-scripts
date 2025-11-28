@@ -46,15 +46,24 @@ for PR_NUMBER in "${PR_NUMBERS[@]}"; do
   echo "[INFO] Processing PR #${PR_NUMBER}..."
   echo "=========================================="
   
+  # Build environment variables
+  ENV_VARS=""
   if [ "$SKIP_JULES" = true ]; then
-    SKIP_JULES_INTEGRATION=1 python github-ops/process_pr.py "${PR_NUMBER}"
-  else
-    python github-ops/process_pr.py "${PR_NUMBER}"
+    ENV_VARS="SKIP_JULES_INTEGRATION=1"
+  fi
+  if [ "$COMMENT_JULES" = true ]; then
+    if [ -n "$ENV_VARS" ]; then
+      ENV_VARS="$ENV_VARS COMMENT_JULES=1"
+    else
+      ENV_VARS="COMMENT_JULES=1"
+    fi
   fi
   
-  # Add --comment-jules handling if enabled
-  if [ "$COMMENT_JULES" = true ] && [ $? -ne 0 ]; then
-    COMMENT_JULES=1 python github-ops/process_pr.py "${PR_NUMBER}"
+  # Run with environment variables
+  if [ -n "$ENV_VARS" ]; then
+    env $ENV_VARS python github-ops/process_pr.py "${PR_NUMBER}"
+  else
+    python github-ops/process_pr.py "${PR_NUMBER}"
   fi
   
   echo "[DONE] PR #${PR_NUMBER} processing complete."

@@ -121,7 +121,7 @@ def get_pr_details(pr_number):
             "view",
             str(pr_number),
             "--json",
-            "headRefName,url,isDraft,state,title",
+            "headRefName,headRefOid,url,isDraft,state,title",
             "--repo",
             "arii/hrm",
         ]
@@ -132,6 +132,36 @@ def get_pr_details(pr_number):
             f"[ERROR] Failed to fetch PR #{pr_number}. " "Is gh CLI installed?"
         )
         sys.exit(1)
+
+
+def create_commit_status(pr_info, status, description, context="verification"):
+    """Creates a commit status for the PR's head SHA."""
+    owner = "arii"
+    repo = "hrm"
+    sha = pr_info["headRefOid"]
+    
+    print(f"[INFO] Setting commit status for {sha} to {status}: {description}")
+
+    try:
+        run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "POST",
+                f"/repos/{owner}/{repo}/statuses/{sha}",
+                "-f",
+                f"state={status}",
+                "-f",
+                f"description={description}",
+                "-f",
+                f"context={context}",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Failed to create commit status: {e}")
+        # Don't fail the whole script if this fails
 
 
 def setup_worktree(branch_name):
@@ -504,6 +534,7 @@ def main():
     # 1. Get PR Details
     print(f"[INFO] Fetching details for PR #{args.pr_number}...")
     pr_info = get_pr_details(args.pr_number)
+    create_commit_status(pr_info, "pending", "Running verification checks...")
     branch_name = pr_info["headRefName"]
     print(f"   Branch: {branch_name}")
     print(f"   Draft:  {pr_info['isDraft']}")
@@ -548,6 +579,12 @@ def main():
     
     is_git_clean = rebase_and_push(worktree_path, branch_name)
 
+    # After a push, the head SHA might change, so we get it again.
+    res = run(["git", "rev-parse", "HEAD"], cwd=worktree_path, capture_output=True)
+    new_sha = res.stdout.strip()
+    if new_sha:
+        pr_info["headRefOid"] = new_sha
+
     results = []
     failure = None
 
@@ -580,6 +617,7 @@ def main():
             results = []
             # Skip to posting results
             session_link = None
+            create_commit_status(pr_info, "failure", "Dependency setup failed")
             post_pr_comment(args.pr_number, results, failure, session_link, None)
             print("\n[DONE] Process Complete.")
             return
@@ -629,6 +667,7 @@ def main():
     # 7. Handle Outcome
     session_link = None
     if failure:
+        create_commit_status(pr_info, "failure", f"Verification failed at: {failure['step']}")
         # Create Jules Session
         session_id = trigger_jules_fix(
             branch_name, args.pr_number, pr_info["title"], failure
@@ -640,6 +679,7 @@ def main():
         if not pr_info["isDraft"]:
             mark_pr_as_draft(args.pr_number)
     else:
+        create_commit_status(pr_info, "success", "All checks passed!")
         # Success Action: Mark ready BEFORE user testing
         if pr_info["isDraft"]:
             update_pr_status(args.pr_number)
