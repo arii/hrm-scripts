@@ -504,6 +504,38 @@ def main():
     # 2. Setup Worktree
     worktree_path = setup_worktree(branch_name)
 
+    # Check if branch already has conflict markers
+    print("\n[STEP] Checking for existing conflicts...")
+    conflict_files = []
+    for root, dirs, files in os.walk(worktree_path):
+        # Skip node_modules and .git
+        dirs[:] = [d for d in dirs if d not in ['.git', 'node_modules', '.next']]
+        for file in files:
+            if file.endswith(('.js', '.ts', '.tsx', '.jsx', '.json', '.md', '.css')):
+                filepath = os.path.join(root, file)
+                try:
+                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        if '<<<<<<< HEAD' in content or '=======' in content and '>>>>>>>' in content:
+                            conflict_files.append(os.path.relpath(filepath, worktree_path))
+                except Exception:
+                    continue
+    
+    if conflict_files:
+        print(f"[FAIL] Branch already contains unresolved conflicts in {len(conflict_files)} file(s):")
+        for cf in conflict_files[:5]:  # Show first 5
+            print(f"  - {cf}")
+        failure = {
+            "step": "Git Conflict Detection",
+            "cmd": "git checkout",
+            "log": f"Branch contains unresolved conflicts in:\n" + "\n".join(conflict_files[:10]),
+        }
+        results = []
+        session_link = None
+        post_pr_comment(args.pr_number, results, failure, session_link, None)
+        print("\n[DONE] Process Complete.")
+        return
+
     # 3. Rebase & Force Push (Early Fail Check)
     print("\n[STEP] Attempting to sync with leader (Rebase/Merge)...")
     is_git_clean = rebase_and_push(worktree_path, branch_name)
