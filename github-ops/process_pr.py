@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(WORKSPACE_ROOT, "session-ops"))
 
 # Attempt to import JulesClient from existing ops script
 SKIP_JULES = os.environ.get('SKIP_JULES_INTEGRATION', '').lower() in ('1', 'true', 'yes')
+COMMENT_JULES = os.environ.get('COMMENT_JULES', '').lower() in ('1', 'true', 'yes')
 
 try:
     from jules_ops import JulesClient
@@ -30,6 +31,8 @@ except ImportError:
 
 if SKIP_JULES:
     print("[INFO] Jules integration disabled via SKIP_JULES_INTEGRATION")
+if COMMENT_JULES:
+    print("[INFO] Jules mention enabled via COMMENT_JULES")
 
 # Attempt to import Secrets Manager
 try:
@@ -372,6 +375,10 @@ def post_pr_comment(pr_number, results, failure_details, session_url=None, analy
     # Summary header
     summary_status = "PASS" if not failure_details else "FAIL"
     body = f"### Automated Verification Results — {summary_status}\n\n"
+    
+    # Add Jules mention on failure if requested
+    if failure_details and COMMENT_JULES:
+        body += "@jules\n\n"
 
     if results:
         # Table of results
