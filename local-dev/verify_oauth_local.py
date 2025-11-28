@@ -85,8 +85,8 @@ def main():
 
     # 1. Provision Secrets
     if SECRETS_AVAILABLE:
-        print("\n🔑 Provisioning secrets to current directory...")
-        if not secrets_ops.provision_secrets(os.getcwd()):
+        print("\n🔑 Provisioning secrets to hrm directory...")
+        if not secrets_ops.provision_secrets("hrm"):
             print("❌ Failed to provision secrets. Aborting.")
             sys.exit(1)
 
@@ -129,7 +129,7 @@ def main():
     ]
 
     try:
-        subprocess.run(cmd, env=env, check=True)
+        subprocess.run(cmd, env=env, check=True, cwd="hrm")
         print("\n✅ OAuth Verification Passed!")
     except subprocess.CalledProcessError:
         print("\n❌ OAuth Verification Failed.")

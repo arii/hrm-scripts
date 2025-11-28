@@ -1,9 +1,9 @@
-WORKSPACE=/home/ari/workspace
+WORKSPACE=/home/ari/hrm-workspace
 
-alias remove_worktrees="rm -rf ${WORKSPACE}/worktrees/* && git -C ${WORKSPACE}/leader worktree prune"
+alias remove_worktrees="rm -rf ${WORKSPACE}/worktrees/* && git -C ${WORKSPACE}/hrm worktree prune"
 
 start_worktree(){
-    cp ${WORKSPACE}/leader/.env.production ${WORKSPACE}/worktrees/${1}
+    cp ${WORKSPACE}/hrm/.env.production ${WORKSPACE}/worktrees/${1}
     sh ${WORKSPACE}/worktrees/${1}/start-production.sh
 }
 

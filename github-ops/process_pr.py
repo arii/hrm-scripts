@@ -8,6 +8,16 @@ import subprocess
 import sys
 import time
 
+# Configuration: operate on the hrm app inside this workspace
+# REPO_DIR points to the `hrm` subdirectory (git repo or submodule)
+WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_DIR = os.path.join(WORKSPACE_ROOT, "hrm")
+WORKTREES_BASE = os.path.join(WORKSPACE_ROOT, "worktrees")
+
+# Add workspace root to path for imports
+sys.path.insert(0, WORKSPACE_ROOT)
+sys.path.insert(0, os.path.join(WORKSPACE_ROOT, "session-ops"))
+
 # Attempt to import JulesClient from existing ops script
 try:
     from jules_ops import JulesClient
@@ -24,11 +34,9 @@ try:
 except ImportError:
     SECRETS_AVAILABLE = False
 
-# Configuration: operate on the hrm app inside this workspace
-# REPO_DIR points to the `hrm` subdirectory (git repo or submodule)
-WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO_DIR = os.path.join(WORKSPACE_ROOT, "hrm")
-WORKTREES_BASE = os.path.join(WORKSPACE_ROOT, "worktrees")
+
+# Ensure worktrees base exists
+os.makedirs(WORKTREES_BASE, exist_ok=True)
 
 
 def run(cmd, cwd=None, check=True, capture_output=False, env=None):
@@ -352,7 +360,7 @@ def run_checks(worktree_path):
     return results, failure_details
 
 
-def post_pr_comment(pr_number, results, failure_details, session_url=None):
+def post_pr_comment(pr_number, results, failure_details, session_url=None, analyzer_json=None):
     """Posts a comment to the PR with the results."""
 
     body = "### Automated Verification Results\n\n"
@@ -375,8 +383,16 @@ def post_pr_comment(pr_number, results, failure_details, session_url=None):
         # Truncate log if too long for comment
         body += failure_details["log"][-2000:]
         body += "\n```\n</details>"
+        if analyzer_json:
+            body += "\n<details><summary>Structure Analyzer</summary>\n\n````json\n"
+            body += analyzer_json[:4000]
+            body += "\n````\n</details>"
     else:
         body += "\n\nAll checks passed! Ready for review."
+        if analyzer_json:
+            body += "\n<details><summary>Structure Analyzer</summary>\n\n````json\n"
+            body += analyzer_json[:4000]
+            body += "\n````\n</details>"
 
     print("[INFO] Posting comment to PR...")
     run(
@@ -465,7 +481,7 @@ def main():
     validator = os.path.join(WORKSPACE_ROOT, "local-dev", "validate_hrm_layout.py")
     if os.path.exists(validator):
         try:
-            run(["python", validator], cwd=WORKSPACE_ROOT)
+            run([sys.executable, validator], cwd=WORKSPACE_ROOT)
         except subprocess.CalledProcessError:
             print("[FAIL] HRM layout validation failed. Aborting.")
             sys.exit(1)
@@ -516,9 +532,37 @@ def main():
                 "Skipping secrets provisioning."
             )
 
-        # 6. Run Checks
-        print("\n[STEP] Running verification suite...")
-        results, failure = run_checks(worktree_path)
+        # 6. Run local-first verification
+        print("\n[STEP] Running local-first verification: npm run verify...")
+        proc = run([
+            "npm",
+            "run",
+            "verify",
+        ], cwd=worktree_path, check=False, capture_output=True)
+
+        output = proc.stdout if proc.stdout else ""
+        passed = proc.returncode == 0
+
+        if passed:
+            results = [{"name": "npm run verify", "status": "[PASS]", "duration": "n/a"}]
+            failure = None
+        else:
+            results = [{"name": "npm run verify", "status": "[FAIL]", "duration": "n/a"}]
+            failure = {
+                "step": "npm run verify",
+                "cmd": "npm run verify",
+                "log": output,
+            }
+
+        # Optional: run structure analyzer and append summary
+        analyzer_path = os.path.join(WORKSPACE_ROOT, "agent-requests", "analyze_structure.py")
+        analyzer_summary = None
+        if os.path.exists(analyzer_path):
+            try:
+                aproc = run(["python", analyzer_path, "--json"], cwd=WORKSPACE_ROOT, check=False, capture_output=True)
+                analyzer_summary = aproc.stdout
+            except Exception:
+                analyzer_summary = None
 
     # 7. Handle Outcome
     session_link = None
@@ -539,7 +583,13 @@ def main():
             update_pr_status(args.pr_number)
 
     # 8. Post Results
-    post_pr_comment(args.pr_number, results, failure, session_link)
+    # Include analyzer summary if available
+    try:
+        analyzer_json = locals().get("analyzer_summary")
+    except Exception:
+        analyzer_json = None
+
+    post_pr_comment(args.pr_number, results, failure, session_link, analyzer_json)
 
     # 9. User Testing (If successful and requested)
     if not failure and is_git_clean and args.start:

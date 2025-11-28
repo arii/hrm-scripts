@@ -42,23 +42,23 @@ A unified CLI tool for interacting with Jules AI sessions and GitHub Issues/PRs.
 ---
 
 ### `check_branch_session.py`
-A utility to map a branch, PR, or Issue to its corresponding Jules session using the consolidated CSV artifact.
+A utility within `github-ops/` to map a branch, PR, or Issue to its corresponding Jules session using the consolidated CSV artifact.
 
 **Features:**
 - **Lookup:** Find the Jules session linked to a branch, PR, or Issue.
 - **Messaging:** Send a message to the session (if `jules_ops.py` is available).
 - **Deletion:** Delete a session after confirmation.
 
-**Typical Usage:**
+**Typical Usage (from workspace root):**
 ```bash
 # Find session for a branch, PR, or issue
-./check_branch_session.py <branch|#pr|issue>
+./github-ops/check_branch_session.py <branch|#pr|issue>
 
 # Send a message to the session
-./check_branch_session.py <identifier> --message "Ping from dev"
+./github-ops/check_branch_session.py <identifier> --message "Ping from dev"
 
 # Delete a session
-./check_branch_session.py <identifier> --delete
+./github-ops/check_branch_session.py <identifier> --delete
 ```
 
 **Notes:**
@@ -104,6 +104,15 @@ python github-ops/process_pr.py <pr_number>
 cd hrm
 npm install
 npm run test
+
+- Preferred local-first verification:
+
+```bash
+cd hrm
+npm run verify
+```
+
+This executes the app’s full local verification flow and posts results directly (no GitHub Actions runners). The PR processor uses this by default.
 ```
 
 ### Dev Container

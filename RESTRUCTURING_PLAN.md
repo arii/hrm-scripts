@@ -1,3 +1,5 @@
+**Status: Completed**
+
 That's an excellent architectural choice. Using a **Git Submodule** for the `hrm` application inside the **`hrm-workspace`** repository provides a clean separation of concerns while ensuring that the automation scripts can easily access the application code at a *specific, version-controlled commit*.
 
 The `hrm-workspace` becomes the operational layer, and the `hrm` submodule remains the self-contained application layer.
