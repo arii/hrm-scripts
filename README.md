@@ -96,6 +96,12 @@ git submodule update --init --recursive
 
 ```bash
 python github-ops/process_pr.py <pr_number>
+
+# Or use the convenient wrapper
+bash scripts/verify-pr.sh <pr_number>
+
+# Quick workspace validation
+bash scripts/check-workspace.sh
 ```
 
 - Work inside the app:
