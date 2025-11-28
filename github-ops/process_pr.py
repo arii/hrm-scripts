@@ -529,22 +529,23 @@ def main():
                     continue
     
     if conflict_files:
-        print(f"[FAIL] Branch already contains unresolved conflicts in {len(conflict_files)} file(s):")
+        print(f"[WARN] Branch already contains unresolved conflicts in {len(conflict_files)} file(s):")
         for cf in conflict_files[:5]:  # Show first 5
             print(f"  - {cf}")
-        failure = {
-            "step": "Git Conflict Detection",
-            "cmd": "git checkout",
-            "log": f"Branch contains unresolved conflicts in:\n" + "\n".join(conflict_files[:10]),
-        }
-        results = []
-        session_link = None
-        post_pr_comment(args.pr_number, results, failure, session_link, None)
-        print("\n[DONE] Process Complete.")
-        return
+        print("[INFO] Will attempt rebase/merge to resolve or update conflicts...")
+        has_existing_conflicts = True
+    else:
+        has_existing_conflicts = False
 
-    # 3. Rebase & Force Push (Early Fail Check)
+    # 3. Rebase & Force Push (Early Fail Check or fix existing conflicts)
     print("\n[STEP] Attempting to sync with leader (Rebase/Merge)...")
+    
+    # If existing conflicts, reset to the commit before the conflict merge
+    if has_existing_conflicts:
+        print("[INFO] Resetting to clean state before attempting fresh rebase/merge...")
+        # Get the parent of HEAD (before the bad merge)
+        run(["git", "reset", "--hard", "HEAD~1"], cwd=worktree_path, check=False)
+    
     is_git_clean = rebase_and_push(worktree_path, branch_name)
 
     results = []
