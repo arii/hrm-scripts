@@ -146,6 +146,9 @@ def setup_worktree(branch_name):
     print(f"[INFO] Creating worktree for branch: {branch_name}")
     # Fetch latest to ensure we know about the branch
     run(["git", "fetch", "origin"], cwd=REPO_DIR)
+    
+    # Force fetch the branch to get latest
+    run(["git", "fetch", "origin", f"{branch_name}:{branch_name}"], cwd=REPO_DIR, check=False)
 
     try:
         # Try checking out existing branch
