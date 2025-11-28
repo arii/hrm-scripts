@@ -19,12 +19,17 @@ sys.path.insert(0, WORKSPACE_ROOT)
 sys.path.insert(0, os.path.join(WORKSPACE_ROOT, "session-ops"))
 
 # Attempt to import JulesClient from existing ops script
+SKIP_JULES = os.environ.get('SKIP_JULES_INTEGRATION', '').lower() in ('1', 'true', 'yes')
+
 try:
     from jules_ops import JulesClient
 
-    JULES_AVAILABLE = True
+    JULES_AVAILABLE = True and not SKIP_JULES
 except ImportError:
     JULES_AVAILABLE = False
+
+if SKIP_JULES:
+    print("[INFO] Jules integration disabled via SKIP_JULES_INTEGRATION")
 
 # Attempt to import Secrets Manager
 try:

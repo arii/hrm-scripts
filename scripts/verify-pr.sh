@@ -1,10 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Parse flags
+SKIP_JULES=false
+PR_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --skip-jules)
+      SKIP_JULES=true
+      shift
+      ;;
+    *)
+      PR_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
 # If PR numbers provided as arguments, use those
 # Otherwise, fetch all open PRs
-if [ "$#" -gt 0 ]; then
-  PR_NUMBERS=("$@")
+if [ "${#PR_ARGS[@]}" -gt 0 ]; then
+  PR_NUMBERS=("${PR_ARGS[@]}")
 else
   echo "[INFO] No PR numbers provided, fetching open PRs..."
   mapfile -t PR_NUMBERS < <(gh pr list --repo arii/hrm --state open --json number --jq '.[].number')
@@ -23,7 +40,13 @@ for PR_NUMBER in "${PR_NUMBERS[@]}"; do
   echo "=========================================="
   echo "[INFO] Processing PR #${PR_NUMBER}..."
   echo "=========================================="
-  python github-ops/process_pr.py "${PR_NUMBER}"
+  
+  if [ "$SKIP_JULES" = true ]; then
+    SKIP_JULES_INTEGRATION=1 python github-ops/process_pr.py "${PR_NUMBER}"
+  else
+    python github-ops/process_pr.py "${PR_NUMBER}"
+  fi
+  
   echo "[DONE] PR #${PR_NUMBER} processing complete."
 done
 
