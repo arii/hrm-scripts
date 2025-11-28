@@ -95,10 +95,11 @@ git submodule update --init --recursive
 - Run workspace automation (examples):
 
 ```bash
+# Process specific PR(s)
 python github-ops/process_pr.py <pr_number>
 
-# Or use the convenient wrapper
-bash scripts/verify-pr.sh <pr_number>
+# Process specific PRs or all open PRs (if no args)
+bash scripts/verify-pr.sh [pr_number ...]
 
 # Quick workspace validation
 bash scripts/check-workspace.sh
