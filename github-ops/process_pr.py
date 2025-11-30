@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(WORKSPACE_ROOT, "session-ops"))
 # Attempt to import JulesClient from existing ops script
 SKIP_JULES = os.environ.get('SKIP_JULES_INTEGRATION', '').lower() in ('1', 'true', 'yes')
 COMMENT_JULES = os.environ.get('COMMENT_JULES', '').lower() in ('1', 'true', 'yes')
+SKIP_REBASE = os.environ.get('SKIP_REBASE_INTEGRATION', '').lower() in ('1', 'true', 'yes')
 
 try:
     from jules_ops import JulesClient
@@ -581,13 +582,27 @@ def main():
         # Get the parent of HEAD (before the bad merge)
         run(["git", "reset", "--hard", "HEAD~1"], cwd=worktree_path, check=False)
     
-    is_git_clean = rebase_and_push(worktree_path, branch_name)
+    is_git_clean = True # Assume clean if skipping rebase
 
-    # After a push, the head SHA might change, so we get it again.
-    res = run(["git", "rev-parse", "HEAD"], cwd=worktree_path, capture_output=True)
-    new_sha = res.stdout.strip()
-    if new_sha:
-        pr_info["headRefOid"] = new_sha
+    if SKIP_REBASE:
+        print("[INFO] Skipping rebase/merge due to --skip-rebase flag.")
+    else:
+        # 3. Rebase & Force Push (Early Fail Check or fix existing conflicts)
+        print("\n[STEP] Attempting to sync with leader (Rebase/Merge)...")
+        
+        # If existing conflicts, reset to the commit before the conflict merge
+        if has_existing_conflicts:
+            print("[INFO] Resetting to clean state before attempting fresh rebase/merge...")
+            # Get the parent of HEAD (before the bad merge)
+            run(["git", "reset", "--hard", "HEAD~1"], cwd=worktree_path, check=False)
+        
+        is_git_clean = rebase_and_push(worktree_path, branch_name)
+
+        # After a push, the head SHA might change, so we get it again.
+        res = run(["git", "rev-parse", "HEAD"], cwd=worktree_path, capture_output=True)
+        new_sha = res.stdout.strip()
+        if new_sha:
+            pr_info["headRefOid"] = new_sha
 
     results = []
     failure = None

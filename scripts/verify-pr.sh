@@ -23,6 +23,10 @@ while [[ $# -gt 0 ]]; do
       COMMENT_JULES=true
       shift
       ;;
+    --skip-rebase)
+      SKIP_REBASE=true
+      shift
+      ;;
     *)
       PR_ARGS+=("$1")
       shift
@@ -63,6 +67,13 @@ for PR_NUMBER in "${PR_NUMBERS[@]}"; do
       ENV_VARS="$ENV_VARS COMMENT_JULES=1"
     else
       ENV_VARS="COMMENT_JULES=1"
+    fi
+  fi
+  if [ "$SKIP_REBASE" = true ]; then
+    if [ -n "$ENV_VARS" ]; then
+      ENV_VARS="$ENV_VARS SKIP_REBASE_INTEGRATION=1"
+    else
+      ENV_VARS="SKIP_REBASE_INTEGRATION=1"
     fi
   fi
   
