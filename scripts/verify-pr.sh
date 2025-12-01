@@ -11,6 +11,7 @@ fi
 # Parse flags
 SKIP_JULES=false
 COMMENT_JULES=false
+SKIP_REBASE=false
 PR_ARGS=()
 
 while [[ $# -gt 0 ]]; do
