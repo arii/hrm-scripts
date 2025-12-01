@@ -2,7 +2,6 @@
 import argparse
 import csv
 import json
-import logging
 import os
 import re
 import shutil
@@ -11,240 +10,32 @@ import sys
 import time
 from datetime import datetime
 
-import requests
+# Import unified configuration and client
+from common_config import (
+    setup_logging, setup_python_path, ensure_workspace, get_data_dir,
+    HRM_REPO_DIR, JULES_DEFAULT_SOURCE
+)
+from jules_client import get_jules_client
 
 # Optional Pandas Import
 try:
     import pandas as pd
-
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
 
-# --- Configuration ---
-API_BASE_URL = "https://jules.googleapis.com/v1alpha"
-DEFAULT_SOURCE = "sources/github/arii/hrm"
-GIT_REPO_PATH = "/home/ari/workspace/leader"
-LOG_FORMAT = "%(asctime)s - %(message)s"
-DATE_FORMAT = "%H:%M:%S"
+# Setup
+setup_python_path()
+ensure_workspace()
+logger = setup_logging("jules_ops")
 
-# Configure Logging
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
-logger = logging.getLogger("jules_ops")
+# Backward compatibility
+GIT_REPO_PATH = str(HRM_REPO_DIR)
+DEFAULT_SOURCE = JULES_DEFAULT_SOURCE
 
 
 # -------------------------------------------------------------------------
-# 1. JULES CLIENT
-# -------------------------------------------------------------------------
-class JulesClient:
-    def __init__(self, api_key=None):
-        self.api_key = api_key or os.environ.get("JULES_API_KEY")
-
-        if not self.api_key:
-            logger.error(
-                "No API key found. Set JULES_API_KEY "
-                "env var or pass --api-key."
-            )
-            sys.exit(1)
-
-        self.headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": self.api_key,
-        }
-
-    def _request(self, method, endpoint, data=None):
-        url = f"{API_BASE_URL}/{endpoint}"
-        try:
-            response = requests.request(
-                method, url, headers=self.headers, json=data
-            )
-            response.raise_for_status()
-            if response.status_code == 204 or not response.content:
-                return {}
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            logger.error(
-                f"HTTP Error: {e.response.status_code} - {e.response.text}"
-            )
-            return None
-        except Exception as exc:
-            logger.error(f"Request Failed: {exc}")
-            return None
-
-    def list_sources(self, filter_str=None):
-        endpoint = "sources"
-        if filter_str:
-            endpoint += f"?filter={filter_str}"
-        response = self._request("GET", endpoint)
-        return response.get("sources", []) if response else []
-
-    def list_sessions(self):
-        all_sessions = []
-        next_page_token = None
-        while True:
-            endpoint = "sessions"
-            if next_page_token:
-                endpoint += f"?pageToken={next_page_token}"
-
-            response = self._request("GET", endpoint)
-            if response:
-                all_sessions.extend(response.get("sessions", []))
-                next_page_token = response.get("nextPageToken")
-                if not next_page_token:
-                    break  # No more pages
-            else:
-                break  # Error or empty response, stop.
-        return all_sessions
-
-    def create_session(
-        self, prompt, source=DEFAULT_SOURCE, branch=None, title=None
-    ):
-        if source.startswith("sources/"):
-            source_id = source
-        else:
-            sources = self.list_sources(f'name="{source}"')
-            if not sources:
-                logger.error(
-                    f"Source '{source}' not found. "
-                    "Use 'list-sources' to see available options."
-                )
-                return None
-            source_id = sources[0]["id"]
-
-        # UPDATED: Payload structure matches Jules API v1alpha Session resource
-        payload = {
-            "prompt": prompt,
-            "sourceContext": {
-                "source": source_id,
-                "githubRepoContext": {
-                    # 'startingBranch' is required by the API.
-                    # Default to 'main' if no specific branch is provided.
-                    "startingBranch": branch
-                    or "main"
-                },
-            },
-        }
-
-        if title:
-            payload["title"] = title
-
-        logger.info(f"🚀 Launching session using source: {source_id}")
-        logger.info(f"📝 Title: {title or 'Untitled'}")
-
-        response = self._request("POST", "sessions", payload)
-
-        if response and "name" in response:
-            return response["name"]
-        return None
-
-    def create_session_deprecated(
-        self, prompt, source=DEFAULT_SOURCE, branch=None, title=None
-    ):
-        if source.startswith("sources/"):
-            source_id = source
-        else:
-            sources = self.list_sources(f'name="{source}"')
-            if not sources:
-                logger.error(
-                    f"Source '{source}' not found. "
-                    "Use 'list-sources' to see available options."
-                )
-                return None
-            source_id = sources[0]["id"]
-
-        payload = {"source": source_id, "prompt": prompt}
-
-        config_overrides = {}
-        if branch:
-            config_overrides["branch"] = branch
-        if config_overrides:
-            payload["config"] = config_overrides
-
-        if title:
-            payload["title"] = title
-
-        logger.info(f"🚀 Launching session using source: {source_id}")
-        logger.info(f"📝 Title: {title or 'Untitled'}")
-
-        response = self._request("POST", "sessions", payload)
-
-        if response and "name" in response:
-            return response["name"]
-        return None
-
-    def get_session(self, session_name):
-        return self._request("GET", f"sessions/{session_name}")
-
-    def send_message_deprecated(self, session_name, text):
-        payload = {"text": text}
-        response = self._request(
-            "POST", f"sessions/{session_name}:message", payload
-        )
-        return response is not None
-
-    def send_message(self, session_name, text):
-        # UPDATED: API expects 'prompt' instead of 'text'
-        payload = {"prompt": text}
-        # UPDATED: Endpoint is ':sendMessage' instead of ':message'
-        response = self._request(
-            "POST", f"sessions/{session_name}:sendMessage", payload
-        )
-        return response is not None
-
-    def delete_session(self, session_name):
-        logger.info(f"🗑️ Deleting session {session_name}...")
-        self._request("DELETE", f"sessions/{session_name}")
-
-    def monitor_session(self, session_name, timeout_minutes=30):
-        logger.info(f"👀 Watching session: {session_name}")
-        end_time = time.time() + (timeout_minutes * 60)
-
-        while time.time() < end_time:
-            status = self.get_session(session_name)
-            if not status:
-                time.sleep(30)
-                continue
-
-            state = status.get("state", "UNKNOWN")
-
-            if state == "SUCCEEDED":
-                logger.info("✅ Session SUCCEEDED.")
-                self._print_pr_link(status)
-                return True
-
-            elif state in ["FAILED", "CANCELLED", "TERMINATED"]:
-                logger.error(f"❌ Session ended with state: {state}")
-                if "error" in status:
-                    logger.error(f"Error details: {status['error']}")
-                return False
-
-            else:
-                logger.info(f"⏳ Status: {state}... waiting 30s")
-                time.sleep(30)
-
-        logger.error("⏱️ Monitoring timed out.")
-        return False
-
-    def _print_pr_link(self, status_json):
-        """Extracts and prints the PR link if available."""
-        outputs = status_json.get("outputs", [])
-        found_pr = False
-        for output in outputs:
-            if "pullRequest" in output:
-                pr_url = output["pullRequest"].get("url")
-                print(f"\n{'-'*40}")
-                print(f"🚀 PULL REQUEST CREATED: {pr_url}")
-                print(f"{'-'*40}\n")
-                found_pr = True
-
-        if not found_pr:
-            logger.warning(
-                "Session succeeded, but no PR URL found in outputs."
-            )
-
-
-# -------------------------------------------------------------------------
-# 2. GITHUB UTILITIES
+# GITHUB UTILITIES
 # -------------------------------------------------------------------------
 
 
@@ -619,6 +410,7 @@ def print_dashboard(sessions, issues, prs):
 def export_data(sessions, issues, prs, fmt="csv"):
     """Exports data to files, using Pandas if available."""
     workstreams = correlate_data(sessions, issues, prs)
+    data_dir = get_data_dir()
 
     datasets = {
         "jules_sessions": normalize_sessions(sessions),
@@ -627,10 +419,10 @@ def export_data(sessions, issues, prs, fmt="csv"):
         "consolidated_workstreams": workstreams,
     }
 
-    logger.info(f"💾 Exporting data in {fmt.upper()} format...")
+    logger.info(f"💾 Exporting data in {fmt.upper()} format to {data_dir}...")
 
     for name, data in datasets.items():
-        filename = f"{name}.{fmt}"
+        filename = data_dir / f"{name}.{fmt}"
         if not data:
             continue
 
@@ -782,7 +574,7 @@ def main():
         return
 
     # Initialize Client
-    client = JulesClient(api_key=args.api_key)
+    client = get_jules_client(api_key=args.api_key)
 
     # Common Fetch Logic for Status and Export
     if args.command in ["status", "export"]:

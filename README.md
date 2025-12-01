@@ -2,76 +2,99 @@
 
 Operational workspace for HRM automation, tooling, and local development.
 
-This workspace contains Python scripts for managing agentic workflows and integrates the `hrm` application as a Git submodule.
+This workspace contains unified Python scripts for managing agentic workflows and integrates the `hrm` application as a Git submodule.
+
+## Unified Script Architecture
+
+All scripts now use a consistent, unified architecture with:
+- **Common Configuration**: Centralized path management and logging
+- **Unified Jules Client**: Single, robust API client with proper error handling
+- **Data Management**: All exports saved to `data/` directory
+- **Consistent Error Handling**: Standardized logging and timeout support
+
+See [`scripts_README.md`](./scripts_README.md) for detailed documentation.
 
 ## Key Scripts
 
 ### `jules_ops.py`
-A unified CLI tool for interacting with Jules AI sessions and GitHub Issues/PRs.
+Main operations script for Jules AI and GitHub integration.
 
 **Features:**
-- **Unified Dashboard:** View active Jules sessions, open PRs, and assigned Issues.
-- **Smart Start (`work-on`):** Start a Jules session from a GitHub Issue ID. Automatically creates a feature branch and sends the issue context to Jules.
-- **Session Lifecycle Automation:** Create, monitor, and publish Jules sessions and PRs.
-- **Zero-Config:** Only requires Python 3, `requests`, and authenticated GitHub CLI (`gh`).
+- **Unified Dashboard:** View active workstreams correlating Jules sessions, PRs, and Issues
+- **Smart Start (`work-on`):** Start a Jules session from a GitHub Issue ID with automatic branch creation
+- **Data Export:** Export comprehensive data to CSV/JSON in the `data/` directory
+- **Session Management:** Create, monitor, delete, and publish Jules sessions
+- **Zero-Config:** Automatically detects workspace environment and paths
 
 **Typical Usage:**
 ```bash
 # Show dashboard of sessions, PRs, and issues
-./jules_ops.py status
+python jules_ops.py status
 
 # Start a Jules session from a GitHub Issue
-./jules_ops.py work-on <issue_id>
+python jules_ops.py work-on <issue_id>
+
+# Export data for analysis (saved to data/)
+python jules_ops.py export --format csv
 
 # Create a session manually
-./jules_ops.py create --prompt "Refactor login" --branch "refactor/login" --title "Login Refactor"
+python jules_ops.py create --prompt "Refactor login" --branch "refactor/login" --title "Login Refactor"
 
 # Publish a PR for a session
-./jules_ops.py publish <session_id>
+python jules_ops.py publish <session_id>
 
 # Monitor a session
-./jules_ops.py watch <session_id>
+python jules_ops.py watch <session_id>
+
+# Delete a specific session
+python jules_ops.py delete sessions/<session_id>
 ```
+
+### Session Management Tools
+- **`delete_failed_sessions.py`**: Clean up all Jules sessions (bulk deletion)
+- **`close_jules_sessions.py`**: Close sessions associated with specific PR numbers
 
 **Setup:**
-- Make executable: `chmod +x jules_ops.py`
 - Set API key: `export JULES_API_KEY="your-api-key"`
-- Install dependencies: `pip install requests`
+- Install dependencies: `pip install requests pandas` (pandas optional but recommended)
 - Authenticate GitHub CLI: `gh auth login`
 
----
+### GitHub Operations (`github-ops/`)
+- **`process_pr.py`**: Process and integrate PRs with Jules sessions
+- **`check_branch_session.py`**: Map branches/PRs/Issues to Jules sessions
 
-### `check_branch_session.py`
-A utility within `github-ops/` to map a branch, PR, or Issue to its corresponding Jules session using the consolidated CSV artifact.
-
-**Features:**
-- **Lookup:** Find the Jules session linked to a branch, PR, or Issue.
-- **Messaging:** Send a message to the session (if `jules_ops.py` is available).
-- **Deletion:** Delete a session after confirmation.
-
-**Typical Usage (from workspace root):**
+**Usage:**
 ```bash
 # Find session for a branch, PR, or issue
-./github-ops/check_branch_session.py <branch|#pr|issue>
+python github-ops/check_branch_session.py <branch|#pr|issue>
 
-# Send a message to the session
-./github-ops/check_branch_session.py <identifier> --message "Ping from dev"
-
-# Delete a session
-./github-ops/check_branch_session.py <identifier> --delete
+# Process a specific PR
+python github-ops/process_pr.py --pr-number 123
 ```
 
-**Notes:**
-- Uses `consolidated_workstreams.csv` for lookups.
-- Requires `jules_ops.py` for messaging/deletion features.
+### Session Operations (`session-ops/`)
+- **`publish_old_sessions.py`**: Publish stalled sessions that haven't created PRs
+- **`secrets_ops.py`**: Manage secrets across environments
+
+**Usage:**
+```bash
+# Publish stalled sessions
+python session-ops/publish_old_sessions.py --update
+```
 
 ---
 
-## Other Files
+## Data Management
 
-- `consolidated_workstreams.csv`: Artifact mapping branches/PRs/issues to Jules sessions.
-- `pyproject.toml`, `.pre-commit-config.yaml`: Formatting and linting configuration.
-- `jules_sessions.csv`, `github_issues.csv`, `github_prs.csv`: Data exports.
+All script outputs are now organized in the `data/` directory:
+- `data/jules_sessions.csv`: Session details and metadata
+- `data/github_issues.csv`: GitHub issues data
+- `data/github_prs.csv`: GitHub pull requests data  
+- `data/consolidated_workstreams.csv`: Correlated workstream data
+
+Configuration files:
+- `pyproject.toml`, `.pre-commit-config.yaml`: Formatting and linting configuration
+- `common_config.py`, `jules_client.py`: Unified script architecture
 
 ---
 

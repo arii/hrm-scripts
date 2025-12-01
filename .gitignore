@@ -1,8 +1,14 @@
+# Data exports (now in data/ directory)
+data/
+__pycache__/
+worktrees/
+
+# Actions runner (temporary build artifacts)
+actions-runner/
+
+# Legacy CSV files (cleaned up)
 consolidated_workstreams.csv
 github_issues.csv
 github_prs.csv
 jules_sessions.csv
 jules_sessions_summary.md
-add
-__pycache__/
-worktrees/

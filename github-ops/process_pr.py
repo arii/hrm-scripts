@@ -8,27 +8,31 @@ import subprocess
 import sys
 import time
 
-# Configuration: operate on the hrm app inside this workspace
-# REPO_DIR points to the `hrm` subdirectory (git repo or submodule)
-WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO_DIR = os.path.join(WORKSPACE_ROOT, "hrm")
-WORKTREES_BASE = os.path.join(WORKSPACE_ROOT, "worktrees")
+# Import unified configuration and client
+from common_config import (
+    setup_logging, setup_python_path, WORKSPACE_ROOT, HRM_REPO_DIR, WORKTREES_BASE
+)
 
-# Add workspace root to path for imports
-sys.path.insert(0, WORKSPACE_ROOT)
-sys.path.insert(0, os.path.join(WORKSPACE_ROOT, "session-ops"))
+# Setup
+setup_python_path()
 
-# Attempt to import JulesClient from existing ops script
+# Environment flags
 SKIP_JULES = os.environ.get('SKIP_JULES_INTEGRATION', '').lower() in ('1', 'true', 'yes')
 COMMENT_JULES = os.environ.get('COMMENT_JULES', '').lower() in ('1', 'true', 'yes')
 SKIP_REBASE = os.environ.get('SKIP_REBASE_INTEGRATION', '').lower() in ('1', 'true', 'yes')
 
+# Import Jules client if available
 try:
-    from jules_ops import JulesClient
-
+    from jules_client import get_jules_client
     JULES_AVAILABLE = True and not SKIP_JULES
 except ImportError:
     JULES_AVAILABLE = False
+
+# Setup logging
+logger = setup_logging("process_pr")
+
+# Backward compatibility
+REPO_DIR = str(HRM_REPO_DIR)
 
 if SKIP_JULES:
     print("[INFO] Jules integration disabled via SKIP_JULES_INTEGRATION")
@@ -482,7 +486,7 @@ def trigger_jules_fix(branch_name, pr_number, pr_title, failure_details):
         return None
 
     print("\n[JULES] Creating Jules Session for Fix...")
-    client = JulesClient()
+    client = get_jules_client()
 
     # Construct prompt
     prompt = (
@@ -520,6 +524,11 @@ def main():
         "--start",
         action="store_true",
         help="Start production server if all checks pass",
+    )
+    parser.add_argument(
+        "--skip-testing",
+        action="store_true",
+        help="Skip all testing and verification steps",
     )
     args = parser.parse_args()
 
@@ -606,6 +615,7 @@ def main():
 
     results = []
     failure = None
+    analyzer_summary = None
 
     if not is_git_clean:
         print("[FAIL] Git rebase/merge failed with conflicts.")
@@ -615,6 +625,10 @@ def main():
             "log": "Merge conflicts detected. "
             "Conflict markers have been committed and pushed.",
         }
+    elif args.skip_testing:
+        print("\n[INFO] Skipping testing as per --skip-testing flag.")
+        results = [{"name": "Verification", "status": "[SKIPPED]", "duration": "0s"}]
+        failure = None
     else:
         # 4. Setup Dependencies (Only if git is clean)
         print("\n[STEP] Setting up dependencies...")
@@ -675,7 +689,6 @@ def main():
 
         # Optional: run structure analyzer and append summary
         analyzer_path = os.path.join(WORKSPACE_ROOT, "agent-requests", "analyze_structure.py")
-        analyzer_summary = None
         if os.path.exists(analyzer_path):
             try:
                 aproc = run(["python", analyzer_path, "--json"], cwd=WORKSPACE_ROOT, check=False, capture_output=True)
@@ -704,13 +717,7 @@ def main():
             update_pr_status(args.pr_number)
 
     # 8. Post Results
-    # Include analyzer summary if available
-    try:
-        analyzer_json = locals().get("analyzer_summary")
-    except Exception:
-        analyzer_json = None
-
-    post_pr_comment(args.pr_number, results, failure, session_link, analyzer_json)
+    post_pr_comment(args.pr_number, results, failure, session_link, analyzer_summary)
 
     # 9. User Testing (If successful and requested)
     if not failure and is_git_clean and args.start:
