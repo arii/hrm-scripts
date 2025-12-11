@@ -33,8 +33,7 @@ Main operations script for Jules and GitHub integration:
 
 ### GitHub Operations
 - **`github_client.py`** - Robust client for Git and GitHub CLI operations
-- **`scripts/update_priority_prs.py`** - Update high-priority PRs from leader (replaces shell script)
-- **`scripts/update_prs_with_test_fixes.py`** - Batch update PRs with fixes (replaces shell script)
+- **`scripts/update_priority_prs.py`** - Update PRs from leader. Can take specific PRs/branches as arguments or update all open PRs if no arguments are provided.
 
 ### GitHub Ops Directory (`github-ops/`)
 - **`process_pr.py`** - Process and integrate PRs with Jules sessions
