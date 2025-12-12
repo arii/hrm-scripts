@@ -40,7 +40,7 @@ class Auditor:
         logger.info(f"Creating issue '{title}'...")
         result = self.client.create_issue(title, body)
         if result:
-            logger.info(f"Created issue #{result.get('number')} at {result.get('url')}")
+            logger.info(f"Created issue: {result}")
         else:
             logger.error("Failed to create issue.")
 
