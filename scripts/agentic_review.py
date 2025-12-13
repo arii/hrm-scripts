@@ -15,13 +15,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+# Adjust sys.path to include repo root for imports BEFORE importing common_config
+sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
+
 # Import unified configuration and client
-from common_config import (
-    setup_logging, setup_python_path, ensure_workspace,
-    HRM_REPO_DIR, JULES_DEFAULT_SOURCE
-)
-from jules_client import get_jules_client
-from github_client import GitHubClient
+try:
+    from common_config import (
+        setup_logging, setup_python_path, ensure_workspace,
+        HRM_REPO_DIR, JULES_DEFAULT_SOURCE
+    )
+    from jules_client import get_jules_client
+    from github_client import GitHubClient
+except ImportError:
+    # Fallback if running from root without package structure
+    try:
+        sys.path.append(os.getcwd())
+        from common_config import (
+            setup_logging, setup_python_path, ensure_workspace,
+            HRM_REPO_DIR, JULES_DEFAULT_SOURCE
+        )
+        from jules_client import get_jules_client
+        from github_client import GitHubClient
+    except ImportError as e:
+        print(f"Critical Error: Could not import core modules: {e}")
+        sys.exit(1)
 
 setup_python_path()
 ensure_workspace()
